@@ -3,6 +3,7 @@ package redislock
 import (
 	"context"
 	"crypto/rand"
+	_ "embed"
 	"encoding/base64"
 	"errors"
 	"io"
@@ -12,25 +13,23 @@ import (
 	"time"
 )
 
+//go:embed obtain.lua
+var luaObtainScript string
+
+//go:embed refresh.lua
+var luaRefreshScript string
+
+//go:embed release.lua
+var luaReleaseScript string
+
+//go:embed pttl.lua
+var luaPTTLScript string
+
 var (
-	luaRefresh = NewScript(`
-if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("pexpire", KEYS[1], ARGV[2]) else return 0 end
-`)
-
-	luaRelease = NewScript(`
-if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) else return 0 end
-`)
-
-	luaPTTL = NewScript(`
-if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("pttl", KEYS[1]) else return -3 end
-`)
-
-	luaObtain = NewScript(`
-if redis.call("set", KEYS[1], ARGV[1], "NX", "PX", ARGV[3]) then return redis.status_reply("OK") end
-
-local offset = tonumber(ARGV[2])
-if redis.call("getrange", KEYS[1], 0, offset-1) == string.sub(ARGV[1], 1, offset) then return redis.call("set", KEYS[1], ARGV[1], "PX", ARGV[3]) end
-`)
+	luaObtain  = NewScript(luaObtainScript)
+	luaRefresh = NewScript(luaRefreshScript)
+	luaRelease = NewScript(luaReleaseScript)
+	luaPTTL    = NewScript(luaPTTLScript)
 )
 
 var (
