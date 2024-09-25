@@ -6,9 +6,21 @@ import (
 	"log"
 	"time"
 
-	"github.com/bsm/redislock"
-	"github.com/redis/go-redis/v9"
+	"github.com/go-redis/redis/v8"
+	"github.com/someonegg/redislock"
 )
+
+type redisClientV8 struct {
+	o *redis.Client
+}
+
+func (c redisClientV8) Eval(ctx context.Context, script string, keys []string, args ...interface{}) (interface{}, error) {
+	return c.o.Eval(ctx, script, keys, args...).Result()
+}
+
+func (c redisClientV8) EvalSha(ctx context.Context, sha1 string, keys []string, args ...interface{}) (interface{}, error) {
+	return c.o.EvalSha(ctx, sha1, keys, args...).Result()
+}
 
 func Example() {
 	// Connect to redis.
@@ -19,7 +31,7 @@ func Example() {
 	defer client.Close()
 
 	// Create a new lock client.
-	locker := redislock.New(client)
+	locker := redislock.New(redisClientV8{client})
 
 	ctx := context.Background()
 
@@ -66,7 +78,7 @@ func ExampleClient_Obtain_retry() {
 	client := redis.NewClient(&redis.Options{Network: "tcp", Addr: "127.0.0.1:6379"})
 	defer client.Close()
 
-	locker := redislock.New(client)
+	locker := redislock.New(redisClientV8{client})
 
 	ctx := context.Background()
 
@@ -91,7 +103,7 @@ func ExampleClient_Obtain_customDeadline() {
 	client := redis.NewClient(&redis.Options{Network: "tcp", Addr: "127.0.0.1:6379"})
 	defer client.Close()
 
-	locker := redislock.New(client)
+	locker := redislock.New(redisClientV8{client})
 
 	// Retry every 500ms, for up-to a minute
 	backoff := redislock.LinearBackoff(500 * time.Millisecond)

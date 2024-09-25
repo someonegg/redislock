@@ -10,15 +10,22 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/redis/go-redis/v9"
 )
 
 var (
-	luaRefresh = redis.NewScript(`if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("pexpire", KEYS[1], ARGV[2]) else return 0 end`)
-	luaRelease = redis.NewScript(`if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) else return 0 end`)
-	luaPTTL    = redis.NewScript(`if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("pttl", KEYS[1]) else return -3 end`)
-	luaObtain  = redis.NewScript(`
+	luaRefresh = NewScript(`
+if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("pexpire", KEYS[1], ARGV[2]) else return 0 end
+`)
+
+	luaRelease = NewScript(`
+if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) else return 0 end
+`)
+
+	luaPTTL = NewScript(`
+if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("pttl", KEYS[1]) else return -3 end
+`)
+
+	luaObtain = NewScript(`
 if redis.call("set", KEYS[1], ARGV[1], "NX", "PX", ARGV[3]) then return redis.status_reply("OK") end
 
 local offset = tonumber(ARGV[2])
@@ -33,11 +40,6 @@ var (
 	// ErrLockNotHeld is returned when trying to release an inactive lock.
 	ErrLockNotHeld = errors.New("redislock: lock not held")
 )
-
-// RedisClient is a minimal client interface.
-type RedisClient interface {
-	redis.Scripter
-}
 
 // Client wraps a redis client.
 type Client struct {
@@ -105,8 +107,8 @@ func (c *Client) Obtain(ctx context.Context, key string, ttl time.Duration, opt 
 }
 
 func (c *Client) obtain(ctx context.Context, key, value string, tokenLen int, ttlVal string) (bool, error) {
-	_, err := luaObtain.Run(ctx, c.client, []string{key}, value, tokenLen, ttlVal).Result()
-	if err == redis.Nil {
+	_, err := luaObtain.Run(ctx, c.client, []string{key}, value, tokenLen, ttlVal)
+	if IsRedisNil(err) {
 		return false, nil
 	} else if err != nil {
 		return false, err
@@ -160,8 +162,8 @@ func (l *Lock) Metadata() string {
 
 // TTL returns the remaining time-to-live. Returns 0 if the lock has expired.
 func (l *Lock) TTL(ctx context.Context) (time.Duration, error) {
-	res, err := luaPTTL.Run(ctx, l.client, []string{l.key}, l.value).Result()
-	if err == redis.Nil {
+	res, err := luaPTTL.Run(ctx, l.client, []string{l.key}, l.value)
+	if IsRedisNil(err) {
 		return 0, nil
 	} else if err != nil {
 		return 0, err
@@ -177,7 +179,7 @@ func (l *Lock) TTL(ctx context.Context) (time.Duration, error) {
 // May return ErrNotObtained if refresh is unsuccessful.
 func (l *Lock) Refresh(ctx context.Context, ttl time.Duration, opt *Options) error {
 	ttlVal := strconv.FormatInt(int64(ttl/time.Millisecond), 10)
-	status, err := luaRefresh.Run(ctx, l.client, []string{l.key}, l.value, ttlVal).Result()
+	status, err := luaRefresh.Run(ctx, l.client, []string{l.key}, l.value, ttlVal)
 	if err != nil {
 		return err
 	} else if status == int64(1) {
@@ -193,8 +195,8 @@ func (l *Lock) Release(ctx context.Context) error {
 		return ErrLockNotHeld
 	}
 
-	res, err := luaRelease.Run(ctx, l.client, []string{l.key}, l.value).Result()
-	if err == redis.Nil {
+	res, err := luaRelease.Run(ctx, l.client, []string{l.key}, l.value)
+	if IsRedisNil(err) {
 		return ErrLockNotHeld
 	} else if err != nil {
 		return err

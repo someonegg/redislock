@@ -1,10 +1,8 @@
 # redislock
 
-[![Test](https://github.com/bsm/redislock/actions/workflows/test.yml/badge.svg)](https://github.com/bsm/redislock/actions/workflows/test.yml)
-[![GoDoc](https://godoc.org/github.com/bsm/redislock?status.png)](http://godoc.org/github.com/bsm/redislock)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-Simplified distributed locking implementation using [Redis](http://redis.io/topics/distlock).
+Simplified distributed locking implementation using [Redis](http://redis.io/topics/distlock), fork from [bsm](https://github.com/bsm/redislock).
 For more information, please see examples.
 
 ## Examples
@@ -16,9 +14,21 @@ import (
   "log"
   "time"
 
-  "github.com/bsm/redislock"
-  "github.com/redis/go-redis/v9"
+  "github.com/go-redis/redis/v8"
+  "github.com/someonegg/redislock"
 )
+
+type redisClientV8 struct {
+	o *redis.Client
+}
+
+func (c redisClientV8) Eval(ctx context.Context, script string, keys []string, args ...interface{}) (interface{}, error) {
+	return c.o.Eval(ctx, script, keys, args...).Result()
+}
+
+func (c redisClientV8) EvalSha(ctx context.Context, sha1 string, keys []string, args ...interface{}) (interface{}, error) {
+	return c.o.EvalSha(ctx, sha1, keys, args...).Result()
+}
 
 func main() {
 	// Connect to redis.
@@ -29,7 +39,7 @@ func main() {
 	defer client.Close()
 
 	// Create a new lock client.
-	locker := redislock.New(client)
+	locker := redislock.New(redisClientV8{client})
 
 	ctx := context.Background()
 
@@ -71,4 +81,4 @@ func main() {
 
 ## Documentation
 
-Full documentation is available on [GoDoc](http://godoc.org/github.com/bsm/redislock)
+Full documentation is available on [GoDoc](http://godoc.org/github.com/someonegg/redislock)

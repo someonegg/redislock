@@ -9,9 +9,21 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/bsm/redislock"
-	"github.com/redis/go-redis/v9"
+	. "github.com/someonegg/redislock"
+	"gopkg.in/redis.v5"
 )
+
+type redisClient struct {
+	o *redis.Client
+}
+
+func (c redisClient) Eval(ctx context.Context, script string, keys []string, args ...interface{}) (interface{}, error) {
+	return c.o.Eval(script, keys, args...).Result()
+}
+
+func (c redisClient) EvalSha(ctx context.Context, sha1 string, keys []string, args ...interface{}) (interface{}, error) {
+	return c.o.EvalSha(sha1, keys, args...).Result()
+}
 
 const lockKey = "__bsm_redislock_unit_test__"
 
@@ -27,7 +39,7 @@ func TestClient(t *testing.T) {
 	defer teardown(t, rc)
 
 	// init client
-	client := New(rc)
+	client := New(redisClient{rc})
 
 	// obtain
 	lock, err := client.Obtain(ctx, lockKey, time.Hour, nil)
@@ -79,7 +91,7 @@ func TestObtain_metadata(t *testing.T) {
 	defer teardown(t, rc)
 
 	meta := "my-data"
-	lock, err := Obtain(ctx, rc, lockKey, time.Hour, &Options{Metadata: meta})
+	lock, err := Obtain(ctx, redisClient{rc}, lockKey, time.Hour, &Options{Metadata: meta})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +108,7 @@ func TestObtain_custom_token(t *testing.T) {
 	defer teardown(t, rc)
 
 	// obtain lock
-	lock1, err := Obtain(ctx, rc, lockKey, time.Hour, &Options{Token: "foo", Metadata: "bar"})
+	lock1, err := Obtain(ctx, redisClient{rc}, lockKey, time.Hour, &Options{Token: "foo", Metadata: "bar"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,13 +122,13 @@ func TestObtain_custom_token(t *testing.T) {
 	}
 
 	// try to obtain again
-	_, err = Obtain(ctx, rc, lockKey, time.Hour, nil)
+	_, err = Obtain(ctx, redisClient{rc}, lockKey, time.Hour, nil)
 	if exp, got := ErrNotObtained, err; !errors.Is(got, exp) {
 		t.Fatalf("expected %v, got %v", exp, got)
 	}
 
 	// allow to re-obtain lock if token is known
-	lock2, err := Obtain(ctx, rc, lockKey, time.Hour, &Options{Token: "foo", Metadata: "baz"})
+	lock2, err := Obtain(ctx, redisClient{rc}, lockKey, time.Hour, &Options{Token: "foo", Metadata: "baz"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +152,7 @@ func TestObtain_retry_success(t *testing.T) {
 	defer lock1.Release(ctx)
 
 	// lock again with linar retry - 3x for 20ms
-	lock2, err := Obtain(ctx, rc, lockKey, time.Hour, &Options{
+	lock2, err := Obtain(ctx, redisClient{rc}, lockKey, time.Hour, &Options{
 		RetryStrategy: LimitRetry(LinearBackoff(20*time.Millisecond), 3),
 	})
 	if err != nil {
@@ -159,7 +171,7 @@ func TestObtain_retry_failure(t *testing.T) {
 	defer lock1.Release(ctx)
 
 	// lock again with linar retry - 2x for 5ms
-	_, err := Obtain(ctx, rc, lockKey, time.Hour, &Options{
+	_, err := Obtain(ctx, redisClient{rc}, lockKey, time.Hour, &Options{
 		RetryStrategy: LimitRetry(LinearBackoff(5*time.Millisecond), 2),
 	})
 	if exp, got := ErrNotObtained, err; !errors.Is(got, exp) {
@@ -185,7 +197,7 @@ func TestObtain_concurrent(t *testing.T) {
 			wait := rand.Int63n(int64(10 * time.Millisecond))
 			time.Sleep(time.Duration(wait))
 
-			_, err := Obtain(ctx, rc, lockKey, time.Minute, nil)
+			_, err := Obtain(ctx, redisClient{rc}, lockKey, time.Minute, nil)
 			if err == ErrNotObtained {
 				return
 			} else if err != nil {
@@ -265,7 +277,7 @@ func TestLock_Release_not_own(t *testing.T) {
 	defer lock.Release(ctx)
 
 	// manually transfer ownership
-	if err := rc.Set(ctx, lockKey, "ABCD", 0).Err(); err != nil {
+	if err := rc.Set(lockKey, "ABCD", 0).Err(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -283,7 +295,7 @@ func TestLock_Release_not_held(t *testing.T) {
 	lock1 := quickObtain(t, rc, time.Hour)
 	defer lock1.Release(ctx)
 
-	lock2, err := Obtain(context.Background(), rc, lockKey, time.Minute, nil)
+	lock2, err := Obtain(context.Background(), redisClient{rc}, lockKey, time.Minute, nil)
 	if exp, got := ErrNotObtained, err; !errors.Is(got, exp) {
 		t.Fatalf("expected %v, got %v", exp, got)
 	}
@@ -298,7 +310,7 @@ func TestLock_Release_not_held(t *testing.T) {
 func quickObtain(t *testing.T, rc *redis.Client, ttl time.Duration) *Lock {
 	t.Helper()
 
-	lock, err := Obtain(context.Background(), rc, lockKey, ttl, nil)
+	lock, err := Obtain(context.Background(), redisClient{rc}, lockKey, ttl, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -325,7 +337,7 @@ func assertTTL(t *testing.T, lock *Lock, exp time.Duration) {
 func teardown(t *testing.T, rc *redis.Client) {
 	t.Helper()
 
-	if err := rc.Del(context.Background(), lockKey).Err(); err != nil {
+	if err := rc.Del(lockKey).Err(); err != nil {
 		t.Fatal(err)
 	}
 	if err := rc.Close(); err != nil {
