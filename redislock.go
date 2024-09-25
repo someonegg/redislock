@@ -33,10 +33,13 @@ var (
 )
 
 var (
+	// ErrLockInactive is returned when get value of an inactive lock.
+	ErrLockInactive = errors.New("redislock: lock inactive")
+
 	// ErrNotObtained is returned when a lock cannot be obtained.
 	ErrNotObtained = errors.New("redislock: not obtained")
 
-	// ErrLockNotHeld is returned when trying to release an inactive lock.
+	// ErrLockNotHeld is returned when trying to release a lock that is not held.
 	ErrLockNotHeld = errors.New("redislock: lock not held")
 )
 
@@ -50,6 +53,40 @@ type Client struct {
 // New creates a new Client instance with a custom namespace.
 func New(client RedisClient) *Client {
 	return &Client{client: client}
+}
+
+func (c *Client) LockValue(ctx context.Context, key string) (string, error) {
+	value, err := c.client.Get(ctx, key)
+	if isRedisNil(err) {
+		return "", ErrLockInactive
+	}
+	return value, err
+}
+
+// Token of a lock with random token.
+func Token(value string) string {
+	return TokenEx(value, randomTokenLen)
+}
+
+// Token of a lock with custom token.
+func TokenEx(value string, tokenLen int) string {
+	if len(value) <= tokenLen {
+		return value
+	}
+	return value[:tokenLen]
+}
+
+// Metadata of a lock with random token.
+func Metadata(value string) string {
+	return MetadataEx(value, randomTokenLen)
+}
+
+// Metadata of a lock with custom token.
+func MetadataEx(value string, tokenLen int) string {
+	if len(value) <= tokenLen {
+		return ""
+	}
+	return value[tokenLen:]
 }
 
 // Obtain tries to obtain a new lock using a key with the given TTL.
@@ -107,7 +144,7 @@ func (c *Client) Obtain(ctx context.Context, key string, ttl time.Duration, opt 
 
 func (c *Client) obtain(ctx context.Context, key, value string, tokenLen int, ttlVal string) (bool, error) {
 	_, err := luaObtain.Run(ctx, c.client, []string{key}, value, tokenLen, ttlVal)
-	if IsRedisNil(err) {
+	if isRedisNil(err) {
 		return false, nil
 	} else if err != nil {
 		return false, err
@@ -115,12 +152,17 @@ func (c *Client) obtain(ctx context.Context, key, value string, tokenLen int, tt
 	return true, nil
 }
 
+var (
+	randomLen      = 16
+	randomTokenLen = base64.RawURLEncoding.EncodedLen(randomLen)
+)
+
 func (c *Client) randomToken() (string, error) {
 	c.tmpMu.Lock()
 	defer c.tmpMu.Unlock()
 
 	if len(c.tmp) == 0 {
-		c.tmp = make([]byte, 16)
+		c.tmp = make([]byte, randomLen)
 	}
 
 	if _, err := io.ReadFull(rand.Reader, c.tmp); err != nil {
@@ -162,7 +204,7 @@ func (l *Lock) Metadata() string {
 // TTL returns the remaining time-to-live. Returns 0 if the lock has expired.
 func (l *Lock) TTL(ctx context.Context) (time.Duration, error) {
 	res, err := luaPTTL.Run(ctx, l.client, []string{l.key}, l.value)
-	if IsRedisNil(err) {
+	if isRedisNil(err) {
 		return 0, nil
 	} else if err != nil {
 		return 0, err
@@ -195,7 +237,7 @@ func (l *Lock) Release(ctx context.Context) error {
 	}
 
 	res, err := luaRelease.Run(ctx, l.client, []string{l.key}, l.value)
-	if IsRedisNil(err) {
+	if isRedisNil(err) {
 		return ErrLockNotHeld
 	} else if err != nil {
 		return err

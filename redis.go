@@ -10,6 +10,7 @@ import (
 
 // RedisClient is a minimal client interface.
 type RedisClient interface {
+	Get(ctx context.Context, key string) (string, error)
 	Eval(ctx context.Context, script string, keys []string, args ...interface{}) (interface{}, error)
 	EvalSha(ctx context.Context, sha1 string, keys []string, args ...interface{}) (interface{}, error)
 }
@@ -43,16 +44,16 @@ func (s *Script) EvalSha(ctx context.Context, c RedisClient, keys []string, args
 // it is retried using EVAL.
 func (s *Script) Run(ctx context.Context, c RedisClient, keys []string, args ...interface{}) (interface{}, error) {
 	res, err := s.EvalSha(ctx, c, keys, args...)
-	if IsRedisNoScript(err) {
+	if isRedisNoScript(err) {
 		return s.Eval(ctx, c, keys, args...)
 	}
 	return res, err
 }
 
-func IsRedisNil(err error) bool {
+func isRedisNil(err error) bool {
 	return err != nil && err.Error() == "redis: nil"
 }
 
-func IsRedisNoScript(err error) bool {
+func isRedisNoScript(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "NOSCRIPT")
 }

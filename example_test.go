@@ -14,6 +14,10 @@ type redisClientV8 struct {
 	o *redis.Client
 }
 
+func (c redisClientV8) Get(ctx context.Context, key string) (string, error) {
+	return c.o.Get(ctx, key).Result()
+}
+
 func (c redisClientV8) Eval(ctx context.Context, script string, keys []string, args ...interface{}) (interface{}, error) {
 	return c.o.Eval(ctx, script, keys, args...).Result()
 }

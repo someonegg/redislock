@@ -1,4 +1,5 @@
-## v0.1.0
+## v0.1.1
 
-- Fork from [bsm](https://github.com/bsm/redislock)
+- Forked from [bsm/redislock](https://github.com/bsm/redislock)
 - Make redislock independent of redis version
+- Support querying LockValue of any lock

@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-Simplified distributed locking implementation using [Redis](http://redis.io/topics/distlock), fork from [bsm](https://github.com/bsm/redislock).
+Simplified distributed locking implementation using [Redis](http://redis.io/topics/distlock), forked from [bsm/redislock](https://github.com/bsm/redislock).
 For more information, please see examples.
 
 ## Examples
@@ -20,6 +20,10 @@ import (
 
 type redisClientV8 struct {
 	o *redis.Client
+}
+
+func (c redisClientV8) Get(ctx context.Context, key string) (string, error) {
+	return c.o.Get(ctx, key).Result()
 }
 
 func (c redisClientV8) Eval(ctx context.Context, script string, keys []string, args ...interface{}) (interface{}, error) {

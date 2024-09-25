@@ -17,6 +17,10 @@ type redisClient struct {
 	o *redis.Client
 }
 
+func (c redisClient) Get(ctx context.Context, key string) (string, error) {
+	return c.o.Get(key).Result()
+}
+
 func (c redisClient) Eval(ctx context.Context, script string, keys []string, args ...interface{}) (interface{}, error) {
 	return c.o.Eval(script, keys, args...).Result()
 }
@@ -72,6 +76,74 @@ func TestClient(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer lock.Release(ctx)
+}
+
+func TestLockValue(t *testing.T) {
+	ctx := context.Background()
+	rc := redis.NewClient(redisOpts)
+	defer teardown(t, rc)
+
+	meta := "my-data"
+
+	// init client
+	client := New(redisClient{rc})
+
+	// obtain
+	lock, err := client.Obtain(ctx, lockKey, time.Hour, &Options{Metadata: meta})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release(ctx)
+
+	value, err := client.LockValue(ctx, lockKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if exp, got := meta, lock.Metadata(); exp != got {
+		t.Fatalf("expected %v, got %v", exp, got)
+	}
+	if exp, got := meta, Metadata(value); exp != got {
+		t.Fatalf("expected %v, got %v", exp, got)
+	}
+}
+
+func TestLockValue_custom_token(t *testing.T) {
+	ctx := context.Background()
+	rc := redis.NewClient(redisOpts)
+	defer teardown(t, rc)
+
+	token := "my-token"
+	meta := "my-data"
+
+	// init client
+	client := New(redisClient{rc})
+
+	// obtain
+	lock, err := client.Obtain(ctx, lockKey, time.Hour, &Options{Token: token, Metadata: meta})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release(ctx)
+
+	value, err := client.LockValue(ctx, lockKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if exp, got := token, lock.Token(); exp != got {
+		t.Fatalf("expected %v, got %v", exp, got)
+	}
+	if exp, got := token, TokenEx(value, len(token)); exp != got {
+		t.Fatalf("expected %v, got %v", exp, got)
+	}
+
+	if exp, got := meta, lock.Metadata(); exp != got {
+		t.Fatalf("expected %v, got %v", exp, got)
+	}
+	if exp, got := meta, MetadataEx(value, len(token)); exp != got {
+		t.Fatalf("expected %v, got %v", exp, got)
+	}
 }
 
 func TestObtain(t *testing.T) {
