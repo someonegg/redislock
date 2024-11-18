@@ -302,7 +302,7 @@ func TestLock_Refresh(t *testing.T) {
 	assertTTL(t, lock, time.Hour)
 
 	// update TTL
-	if err := lock.Refresh(ctx, time.Minute, nil); err != nil {
+	if err := lock.Refresh(ctx, time.Minute); err != nil {
 		t.Fatal(err)
 	}
 
@@ -320,7 +320,7 @@ func TestLock_Refresh_expired(t *testing.T) {
 
 	// try releasing
 	time.Sleep(10 * time.Millisecond)
-	if exp, got := ErrNotObtained, lock.Refresh(ctx, time.Minute, nil); !errors.Is(got, exp) {
+	if exp, got := ErrNotObtained, lock.Refresh(ctx, time.Minute); !errors.Is(got, exp) {
 		t.Fatalf("expected %v, got %v", exp, got)
 	}
 }
